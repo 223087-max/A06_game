@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Tetris</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --neon-blue: #00f3ff;
+            --neon-pink: #ff00ff;
+            --bg-color: #050510;
+            --grid-color: rgba(0, 243, 255, 0.1);
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 50% 50%, #1a1a2e 0%, #050510 100%),
+                linear-gradient(0deg, transparent 24%, var(--grid-color) 25%, var(--grid-color) 26%, transparent 27%, transparent 74%, var(--grid-color) 75%, var(--grid-color) 76%, transparent 77%, transparent),
+                linear-gradient(90deg, transparent 24%, var(--grid-color) 25%, var(--grid-color) 26%, transparent 27%, transparent 74%, var(--grid-color) 75%, var(--grid-color) 76%, transparent 77%, transparent);
+            background-size: 100% 100%, 50px 50px, 50px 50px;
+            color: white;
+            font-family: 'Orbitron', sans-serif;
+            overflow: hidden;
+            touch-action: none; /* Prevent scroll on touch devices */
+        }
+
+        .glass-panel {
+            background: rgba(10, 10, 25, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 243, 255, 0.3);
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.1), inset 0 0 20px rgba(0, 243, 255, 0.05);
+            border-radius: 12px;
+        }
+
+        .neon-text {
+            text-shadow: 0 0 5px var(--neon-blue), 0 0 10px var(--neon-blue);
+        }
+
+        .neon-text-pink {
+            text-shadow: 0 0 5px var(--neon-pink), 0 0 10px var(--neon-pink);
+            color: #ffb3ff;
+        }
+
+        #game-canvas {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid var(--neon-blue);
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.4), inset 0 0 20px rgba(0, 243, 255, 0.2);
+            border-radius: 4px;
+            image-rendering: pixelated;
+        }
+
+        /* プレビュー用キャンバス */
+        .mini-canvas {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(0, 243, 255, 0.3);
+            border-radius: 4px;
+        }
+
+        /* コントロールボタン (モバイル用) */
+        .control-btn {
+            background: rgba(0, 243, 255, 0.1);
+            border: 1px solid var(--neon-blue);
+            color: var(--neon-blue);
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.2);
+            transition: all 0.1s;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .control-btn:active {
+            background: rgba(0, 243, 255, 0.4);
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.6);
+            transform: scale(0.95);
+        }
+
+        /* オーバーレイ (スタート画面、ゲームオーバー画面) */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+            backdrop-filter: blur(5px);
+            transition: opacity 0.3s ease;
+        }
+        .hidden-overlay {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .start-btn {
+            background: transparent;
+            border: 2px solid var(--neon-pink);
+            color: var(--neon-pink);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(255, 0, 255, 0.4), inset 0 0 15px rgba(255, 0, 255, 0.4);
+            transition: all 0.2s;
+        }
+        .start-btn:hover {
+            background: rgba(255, 0, 255, 0.2);
+            box-shadow: 0 0 25px rgba(255, 0, 255, 0.8), inset 0 0 25px rgba(255, 0, 255, 0.8);
+            text-shadow: 0 0 10px white;
+        }
+
+        /* Animations */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .animate-pulse-fast {
+            animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Layout tweaks for smaller screens */
+        @media (max-height: 800px) {
+            .game-container {
+                transform: scale(0.85);
+            }
+        }
+        @media (max-height: 700px) {
+            .game-container {
+                transform: scale(0.75);
+            }
+        }
+        @media (max-height: 600px) {
+            .game-container {
+                transform: scale(0.65);
+            }
+        }
+    </style>
+</head>
+<body class="w-screen h-screen flex flex-col items-center justify-center relative">
+
+    <!-- Title -->
+    <h1 class="text-4xl md:text-5xl font-black mb-4 neon-text tracking-widest absolute top-4 md:top-8 z-10">NEON TETRIS</h1>
+
+    <!-- Game Layout -->
+    <div class="game-container flex flex-row items-start justify-center gap-4 z-20 mt-12 md:mt-16">
+        
+        <!-- Left Panel: Hold & Stats -->
+        <div class="flex flex-col gap-4">
+            <!-- Hold Piece -->
+            <div class="glass-panel p-4 flex flex-col items-center w-28 md:w-32">
+                <h2 class="text-xs md:text-sm text-gray-400 mb-2 tracking-wider">HOLD</h2>
+                <canvas id="hold-canvas" width="80" height="80" class="mini-canvas"></canvas>
+            </div>
+            
+            <!-- Stats -->
+            <div class="glass-panel p-4 flex flex-col items-center w-28 md:w-32 gap-3">
+                <div class="w-full text-center">
+                    <h2 class="text-xs text-gray-400 tracking-wider">SCORE</h2>
+                    <p id="score" class="text-lg md:text-xl font-bold neon-text">0</p>
+                </div>
+                <div class="w-full text-center">
+                    <h2 class="text-xs text-gray-400 tracking-wider">LEVEL</h2>
+                    <p id="level" class="text-lg md:text-xl font-bold neon-text">1</p>
+                </div>
+                <div class="w-full text-center">
+                    <h2 class="text-xs text-gray-400 tracking-wider">LINES</h2>
+                    <p id="lines" class="text-lg md:text-xl font-bold neon-text">0</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Game Area -->
+        <div class="relative">
+            <canvas id="game-canvas" width="300" height="600"></canvas>
+            
+            <!-- UI Overlays -->
+            <div id="start-screen" class="overlay">
+                <h2 class="text-3xl font-bold neon-text-pink mb-8">SYSTEM READY</h2>
+                <button id="start-btn" class="start-btn">START GAME</button>
+                <p class="mt-8 text-sm text-gray-400 text-center max-w-xs">
+                    [↑] Rotate <br> [←][→] Move <br> [↓] Soft Drop <br> [Space] Hard Drop <br> [C] Hold
+                </p>
+            </div>
+
+            <div id="game-over-screen" class="overlay hidden-overlay">
+                <h2 class="text-4xl font-bold text-red-500 mb-2" style="text-shadow: 0 0 10px red;">GAME OVER</h2>
+                <p class="text-lg mb-8">FINAL SCORE: <span id="final-score" class="neon-text">0</span></p>
+                <button id="restart-btn" class="start-btn">TRY AGAIN</button>
+            </div>
+
+            <div id="pause-screen" class="overlay hidden-overlay">
+                <h2 class="text-4xl font-bold neon-text-pink mb-8 animate-pulse-fast">PAUSED</h2>
+                <button id="resume-btn" class="start-btn">RESUME</button>
+            </div>
+        </div>
+
+        <!-- Right Panel: Next Piece -->
+        <div class="glass-panel p-4 flex flex-col items-center w-28 md:w-32">
+            <h2 class="text-xs md:text-sm text-gray-400 mb-2 tracking-wider">NEXT</h2>
+            <canvas id="next-canvas" width="80" height="80" class="mini-canvas mb-2"></canvas>
+            <canvas id="next-canvas-2" width="60" height="60" class="mini-canvas opacity-70"></canvas>
+        </div>
+    </div>
+
+    <!-- Mobile Controls (Visible only on small screens) -->
+    <div class="md:hidden flex flex-col items-center gap-4 mt-6 z-20 w-full max-w-sm px-4 pb-4">
+        <!-- Action buttons row -->
+        <div class="flex justify-between w-full px-2">
+            <button id="btn-hold" class="control-btn w-16 h-12 rounded-lg font-bold text-sm">HOLD</button>
+            <button id="btn-harddrop" class="control-btn w-16 h-12 rounded-lg font-bold text-sm">DROP</button>
+        </div>
+        <!-- D-Pad and Rotate -->
+        <div class="flex items-center justify-between w-full">
+            <div class="grid grid-cols-3 gap-2">
+                <div></div>
+                <button id="btn-rotate" class="control-btn w-14 h-14 rounded-full flex items-center justify-center">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+                <div></div>
+                <button id="btn-left" class="control-btn w-14 h-14 rounded-full flex items-center justify-center">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                </button>
+                <button id="btn-down" class="control-btn w-14 h-14 rounded-full flex items-center justify-center">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                </button>
+                <button id="btn-right" class="control-btn w-14 h-14 rounded-full flex items-center justify-center">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pause Button (Top Right) -->
+    <button id="btn-pause" class="absolute top-4 right-4 z-30 glass-panel p-2 text-gray-300 hover:text-white transition">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+    </button>
+
+<script>
+/**
+ * Neon Tetris Implementation
+ * Modern features: 7-Bag randomizer, Ghost Piece, Hold system, Wall Kicks (Basic), Lock Delay.
+ */
+
+// --- Constants & Config ---
+const COLS = 10;
+const ROWS = 20;
+const BLOCK_SIZE = 30; // Pixel size for rendering main canvas
+
+// Colors for each Tetromino (Neon style)
+const COLORS = [
+    null,
+    '#00ffff', // I - Cyan
+    '#0000ff', // J - Blue
+    '#ff7f00', // L - Orange
+    '#ffff00', // O - Yellow
+    '#00ff00', // S - Green
+    '#800080', // T - Purple
+    '#ff0000', // Z - Red
+    '#ffffff'  // 8: Garbage/Ghost
+];
+
+// Hex codes for nice gradients/borders
+const COLOR_HEAVY = [
+    null, '#008888', '#000088', '#884400', '#888800', '#008800', '#440044', '#880000'
+];
+
+// Tetromino Shapes (represented by numbers matching color index)
+const SHAPES = [
+    [], // 0
+    [ [0,0,0,0], [1,1,1,1], [0,0,0,0], [0,0,0,0] ], // I (1)
+    [ [2,0,0], [2,2,2], [0,0,0] ], // J (2)
+    [ [0,0,3], [3,3,3], [0,0,0] ], // L (3)
+    [ [4,4], [4,4] ], // O (4)
+    [ [0,5,5], [5,5,0], [0,0,0] ], // S (5)
+    [ [0,6,0], [6,6,6], [0,0,0] ], // T (6)
+    [ [7,7,0], [0,7,7], [0,0,0] ]  // Z (7)
+];
+
+// Scoring system (Original Nintendo scoring based on level)
+const SCORE_BASE = [0, 40, 100, 300, 1200]; 
+
+// --- Canvas Contexts ---
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+const nextCanvas = document.getElementById('next-canvas');
+const nextCtx = nextCanvas.getContext('2d');
+const nextCanvas2 = document.getElementById('next-canvas-2');
+const nextCtx2 = nextCanvas2.getContext('2d');
+const holdCanvas = document.getElementById('hold-canvas');
+const holdCtx = holdCanvas.getContext('2d');
+
+// --- Game State Variables ---
+let board = [];
+let score = 0;
+let level = 1;
+let lines = 0;
+let piece = null;
+let nextPieces = []; // queue of next pieces
+let holdPiece = null;
+let canHold = true;
+let ghostPiece = null;
+
+let dropCounter = 0;
+let dropInterval = 1000;
+let lastTime = 0;
+let reqAnimationId = null;
+let gameState = 'START'; // START, PLAYING, PAUSED, GAMEOVER
+
+let lockDelayCounter = 0;
+const LOCK_DELAY = 500; // ms to allow sliding before locking
+
+let clearingLines = [];
+let clearAnimationTimer = 0;
+
+// --- DOM Elements ---
+const elScore = document.getElementById('score');
+const elLevel = document.getElementById('level');
+const elLines = document.getElementById('lines');
+const startScreen = document.getElementById('start-screen');
+const gameOverScreen = document.getElementById('game-over-screen');
+const pauseScreen = document.getElementById('pause-screen');
+const elFinalScore = document.getElementById('final-score');
+
+// --- Initialization ---
+function init() {
+    ctx.scale(1, 1); // We rely on CSS scaling if needed, keep internal res 300x600
+    resetGame();
+}
+
+function resetGame() {
+    // Create empty 20x10 board
+    board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    score = 0;
+    level = 1;
+    lines = 0;
+    updateStats();
+    
+    holdPiece = null;
+    canHold = true;
+    nextPieces = [];
+    generateNextPieces();
+    generateNextPieces(); // Ensure queue is full
+    spawnPiece();
+    
+    dropInterval = getDropInterval();
+    gameState = 'PLAYING';
+    lastTime = performance.now();
+    dropCounter = 0;
+    lockDelayCounter = 0;
+    
+    drawHold();
+}
+
+// 7-Bag Randomizer
+let bag = [];
+function generateNextPieces() {
+    if (bag.length === 0) {
+        bag = [1, 2, 3, 4, 5, 6, 7];
+        // Fisher-Yates Shuffle
+        for (let i = bag.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [bag[i], bag[j]] = [bag[j], bag[i]];
+        }
+    }
+    nextPieces.push(bag.pop());
+    if (nextPieces.length < 3) generateNextPieces(); // Ensure at least 2 next pieces
+}
+
+function createPiece(type) {
+    return {
+        matrix: JSON.parse(JSON.stringify(SHAPES[type])), // Deep copy
+        x: type === 4 ? 4 : 3, // Center O piece slightly differently
+        y: 0,
+        type: type
+    };
+}
+
+function spawnPiece() {
+    const type = nextPieces.shift();
+    generateNextPieces();
+    piece = createPiece(type);
+    canHold = true;
+    
+    // Check game over immediately on spawn
+    if (collide(board, piece)) {
+        gameOver();
+    }
+    
+    updateGhostPiece();
+    drawNext();
+}
+
+function hold() {
+    if (!canHold || gameState !== 'PLAYING') return;
+    
+    if (holdPiece === null) {
+        holdPiece = piece.type;
+        spawnPiece();
+    } else {
+        const temp = piece.type;
+        piece = createPiece(holdPiece);
+        holdPiece = temp;
+    }
+    canHold = false;
+    dropCounter = 0;
+    updateGhostPiece();
+    drawHold();
+}
+
+// --- Game Logic ---
+function collide(board, p) {
+    const m = p.matrix;
+    for (let y = 0; y < m.length; ++y) {
+        for (let x = 0; x < m[y].length; ++x) {
+            if (m[y][x] !== 0 &&
+               (board[y + p.y] && board[y + p.y][x + p.x]) !== 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function rotateMatrix(matrix, dir) {
+    // Transpose
+    for (let y = 0; y < matrix.length; ++y) {
+        for (let x = 0; x < y; ++x) {
+            [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+        }
+    }
+    // Reverse rows
+    if (dir > 0) {
+        matrix.forEach(row => row.reverse());
+    } else {
+        matrix.reverse();
+    }
+}
+
+function playerRotate(dir) {
+    const pos = piece.x;
+    let offset = 1;
+    rotateMatrix(piece.matrix, dir);
+    
+    // Basic Wall Kick logic
+    while (collide(board, piece)) {
+        piece.x += offset;
+        offset = -(offset + (offset > 0 ? 1 : -1));
+        if (offset > piece.matrix[0].length) {
+            rotateMatrix(piece.matrix, -dir); // Undo rotation if failed
+            piece.x = pos;
+            return;
+        }
+    }
+    updateGhostPiece();
+}
+
+function playerMove(offset) {
+    piece.x += offset;
+    if (collide(board, piece)) {
+        piece.x -= offset;
+    } else {
+        updateGhostPiece();
+        lockDelayCounter = 0; // reset lock delay on movement
+    }
+}
+
+function playerDrop() {
+    piece.y++;
+    if (collide(board, piece)) {
+        piece.y--;
+        return true; // touched something
+    }
+    dropCounter = 0;
+    return false;
+}
+
+function playerHardDrop() {
+    while (!playerDrop()) {
+        score += 2; // Hard drop bonus
+    }
+    lockPiece();
+    updateStats();
+}
+
+function updateGhostPiece() {
+    if (!piece) return;
+    ghostPiece = {
+        matrix: piece.matrix,
+        x: piece.x,
+        y: piece.y,
+        type: piece.type
+    };
+    while (!collide(board, ghostPiece)) {
+        ghostPiece.y++;
+    }
+    ghostPiece.y--;
+}
+
+function lockPiece() {
+    piece.matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+            if (value !== 0) {
+                // Ensure we don't write outside board bounds (top out safety)
+                if (y + piece.y >= 0) {
+                    board[y + piece.y][x + piece.x] = value;
+                }
+            }
+        });
+    });
+    
+    checkLines();
+    if (gameState === 'PLAYING') {
+        spawnPiece();
+    }
+}
+
+function checkLines() {
+    let linesCleared = 0;
+    clearingLines = [];
+    
+    for (let y = ROWS - 1; y >= 0; y--) {
+        let isFull = true;
+        for (let x = 0; x < COLS; x++) {
+            if (board[y][x] === 0) {
+                isFull = false;
+                break;
+            }
+        }
+        if (isFull) {
+            clearingLines.push(y);
+            linesCleared++;
+        }
+    }
+    
+    if (linesCleared > 0) {
+        // Line clear logic with animation delay
+        gameState = 'ANIMATING';
+        clearAnimationTimer = 150; // ms
+        
+        // Calculate score
+        score += SCORE_BASE[linesCleared] * level;
+        lines += linesCleared;
+        level = Math.floor(lines / 10) + 1;
+        dropInterval = getDropInterval();
+        updateStats();
+    }
+}
+
+function removeClearedLines() {
+    // Sort descending to remove from bottom up safely
+    clearingLines.sort((a,b) => a - b);
+    
+    clearingLines.forEach(y => {
+        const row = board.splice(y, 1)[0].fill(0);
+        board.unshift(row);
+    });
+    clearingLines = [];
+    gameState = 'PLAYING';
+    spawnPiece();
+}
+
+function getDropInterval() {
+    // Curve for speed: Gets significantly faster around level 10+
+    const speed = Math.pow(0.8 - ((level - 1) * 0.007), level - 1);
+    return Math.max(100, 1000 * speed); 
+}
+
+function updateStats() {
+    elScore.innerText = score;
+    elLevel.innerText = level;
+    elLines.innerText = lines;
+}
+
+function gameOver() {
+    gameState = 'GAMEOVER';
+    elFinalScore.innerText = score;
+    gameOverScreen.classList.remove('hidden-overlay');
+}
+
+// --- Input Handling ---
+document.addEventListener('keydown', event => {
+    if (gameState !== 'PLAYING') {
+        if (event.keyCode === 27 || event.keyCode === 80) { // ESC or P
+            togglePause();
+        }
+        return;
+    }
+
+    switch (event.keyCode) {
+        case 37: // Left
+            playerMove(-1);
+            break;
+        case 39: // Right
+            playerMove(1);
+            break;
+        case 40: // Down
+            if(!playerDrop()) {
+                score += 1; // Soft drop bonus
+                updateStats();
+            }
+            break;
+        case 38: // Up / Rotate
+        case 88: // X
+            playerRotate(1);
+            break;
+        case 90: // Z
+            playerRotate(-1);
+            break;
+        case 32: // Space
+            playerHardDrop();
+            break;
+        case 67: // C
+            hold();
+            break;
+        case 27: // ESC
+        case 80: // P
+            togglePause();
+            break;
+    }
+});
+
+// Mobile Controls Setup
+const attachBtn = (id, action, continuous = false) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    
+    let interval;
+    const startAction = (e) => {
+        e.preventDefault();
+        if (gameState !== 'PLAYING') return;
+        action();
+        if (continuous) {
+            interval = setInterval(action, 100);
+        }
+    };
+    const stopAction = (e) => {
+        e.preventDefault();
+        clearInterval(interval);
+    };
+
+    btn.addEventListener('touchstart', startAction, {passive: false});
+    btn.addEventListener('touchend', stopAction, {passive: false});
+    btn.addEventListener('mousedown', startAction);
+    btn.addEventListener('mouseup', stopAction);
+    btn.addEventListener('mouseleave', stopAction);
+};
+
+attachBtn('btn-left', () => playerMove(-1), true);
+attachBtn('btn-right', () => playerMove(1), true);
+attachBtn('btn-down', () => {
+    if(!playerDrop()) {
+        score += 1; 
+        updateStats();
+    }
+}, true);
+attachBtn('btn-rotate', () => playerRotate(1));
+attachBtn('btn-harddrop', () => playerHardDrop());
+attachBtn('btn-hold', () => hold());
+document.getElementById('btn-pause').addEventListener('click', togglePause);
+
+// UI Buttons
+document.getElementById('start-btn').addEventListener('click', () => {
+    startScreen.classList.add('hidden-overlay');
+    init();
+    update();
+});
+
+document.getElementById('restart-btn').addEventListener('click', () => {
+    gameOverScreen.classList.add('hidden-overlay');
+    resetGame();
+});
+
+document.getElementById('resume-btn').addEventListener('click', togglePause);
+
+function togglePause() {
+    if (gameState === 'PLAYING') {
+        gameState = 'PAUSED';
+        pauseScreen.classList.remove('hidden-overlay');
+    } else if (gameState === 'PAUSED') {
+        gameState = 'PLAYING';
+        pauseScreen.classList.add('hidden-overlay');
+        lastTime = performance.now(); // reset timer
+        update(); // resume loop
+    }
+}
+
+
+// --- Rendering ---
+function drawBlock(context, x, y, type, size, alpha = 1, isGhost = false) {
+    if (type === 0) return;
+    
+    const px = x * size;
+    const py = y * size;
+    const color = COLORS[type];
+    const borderCol = COLOR_HEAVY[type] || color;
+
+    context.globalAlpha = alpha;
+
+    if (isGhost) {
+        context.strokeStyle = color;
+        context.lineWidth = 2;
+        context.strokeRect(px + 2, py + 2, size - 4, size - 4);
+        context.fillStyle = `rgba(255, 255, 255, 0.1)`;
+        context.fillRect(px + 2, py + 2, size - 4, size - 4);
+    } else {
+        // Base color
+        context.fillStyle = color;
+        context.fillRect(px + 1, py + 1, size - 2, size - 2);
+        
+        // Neon Glow effect inside
+        context.fillStyle = borderCol;
+        context.fillRect(px + 4, py + 4, size - 8, size - 8);
+        
+        // Highlight (top-left)
+        context.fillStyle = 'rgba(255,255,255,0.4)';
+        context.fillRect(px + 2, py + 2, size - 4, 4);
+        context.fillRect(px + 2, py + 2, 4, size - 4);
+
+        // Shadow (bottom-right)
+        context.fillStyle = 'rgba(0,0,0,0.4)';
+        context.fillRect(px + 2, py + size - 6, size - 4, 4);
+        context.fillRect(px + size - 6, py + 2, 4, size - 4);
+    }
+    
+    context.globalAlpha = 1; // reset
+}
+
+function drawMatrix(context, matrix, offsetX, offsetY, size, isGhost = false) {
+    matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+            if (value !== 0) {
+                drawBlock(context, x + offsetX, y + offsetY, isGhost ? piece.type : value, size, isGhost ? 0.3 : 1, isGhost);
+            }
+        });
+    });
+}
+
+function drawGrid(context, width, height, size) {
+    context.strokeStyle = 'rgba(0, 243, 255, 0.05)';
+    context.lineWidth = 1;
+    context.beginPath();
+    for(let i = 0; i <= width; i += size) {
+        context.moveTo(i, 0);
+        context.lineTo(i, height);
+    }
+    for(let j = 0; j <= height; j += size) {
+        context.moveTo(0, j);
+        context.lineTo(width, j);
+    }
+    context.stroke();
+}
+
+function drawMini(context, typeStr, scale = 20, isOpacity = false) {
+    context.clearRect(0, 0, context.canvas.width, context.canvas.height);
+    if (!typeStr && typeStr !== 0) return;
+    
+    const matrix = SHAPES[typeStr];
+    if (!matrix) return;
+
+    // Center calculation
+    const mWidth = matrix[0].length * scale;
+    const mHeight = matrix.length * scale;
+    const offsetX = (context.canvas.width - mWidth) / 2 / scale;
+    const offsetY = (context.canvas.height - mHeight) / 2 / scale;
+
+    if (isOpacity) context.globalAlpha = 0.6;
+    drawMatrix(context, matrix, offsetX, offsetY, scale);
+    if (isOpacity) context.globalAlpha = 1.0;
+}
+
+function drawNext() {
+    drawMini(nextCtx, nextPieces[0], 20);
+    drawMini(nextCtx2, nextPieces[1], 15, true);
+}
+
+function drawHold() {
+    drawMini(holdCtx, holdPiece, 20);
+}
+
+function draw() {
+    // Clear Main Canvas
+    ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    drawGrid(ctx, canvas.width, canvas.height, BLOCK_SIZE);
+
+    // Draw board
+    drawMatrix(ctx, board, 0, 0, BLOCK_SIZE);
+
+    // Draw Animation (Line Clear Flash)
+    if (gameState === 'ANIMATING') {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        clearingLines.forEach(y => {
+            ctx.fillRect(0, y * BLOCK_SIZE, canvas.width, BLOCK_SIZE);
+        });
+    }
+
+    // Draw Ghost and Active Piece
+    if (piece && gameState === 'PLAYING') {
+        if (ghostPiece) {
+            drawMatrix(ctx, ghostPiece.matrix, ghostPiece.x, ghostPiece.y, BLOCK_SIZE, true);
+        }
+        drawMatrix(ctx, piece.matrix, piece.x, piece.y, BLOCK_SIZE);
+    }
+}
+
+// --- Main Game Loop ---
+function update(time = 0) {
+    if (gameState === 'PAUSED' || gameState === 'GAMEOVER' || gameState === 'START') {
+        reqAnimationId = requestAnimationFrame(update);
+        return;
+    }
+
+    const deltaTime = time - lastTime;
+    lastTime = time;
+
+    if (gameState === 'ANIMATING') {
+        clearAnimationTimer -= deltaTime;
+        if (clearAnimationTimer <= 0) {
+            removeClearedLines();
+        }
+        draw();
+        reqAnimationId = requestAnimationFrame(update);
+        return;
+    }
+
+    dropCounter += deltaTime;
+    
+    // Check if touching bottom for lock delay
+    const isTouching = collide(board, { ...piece, y: piece.y + 1 });
+    
+    if (isTouching) {
+        lockDelayCounter += deltaTime;
+        if (lockDelayCounter >= LOCK_DELAY) {
+            lockPiece();
+            lockDelayCounter = 0;
+            dropCounter = 0;
+        }
+    } else {
+        lockDelayCounter = 0; // reset if moved off the surface
+        if (dropCounter > dropInterval) {
+            playerDrop();
+            dropCounter = 0;
+        }
+    }
+
+    draw();
+    reqAnimationId = requestAnimationFrame(update);
+}
+
+// Prevent spacebar and arrows from scrolling the page globally
+window.addEventListener("keydown", function(e) {
+    if([32, 37, 38, 39, 40].indexOf(e.keyCode) > -1) {
+        e.preventDefault();
+    }
+}, false);
+
+// Initial draw
+drawGrid(ctx, canvas.width, canvas.height, BLOCK_SIZE);
+
+</script>
+</body>
+</html>
