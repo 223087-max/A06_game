@@ -141,6 +141,38 @@
                 transform: scale(0.65);
             }
         }
+        @media (max-width: 600px) {
+            body.w-screen {
+                height: auto;
+                min-height: 100vh;
+                overflow-y: auto;
+                touch-action: pan-y;
+                justify-content: flex-start;
+            }
+            body > h1.neon-text {
+                position: static;
+                font-size: 1.5rem;
+                margin: 20px 0;
+                padding: 0 56px 0 16px;
+                width: 100%;
+            }
+            body > .game-container {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 8px;
+                width: min(340px, calc(100% - 16px));
+                margin-top: 0;
+                transform: none;
+            }
+            .game-container > :first-child { display: contents; }
+            .game-container .glass-panel { width: auto; padding: 8px; }
+            .game-container > :nth-child(2) {
+                grid-column: 1 / -1;
+                grid-row: 2;
+                justify-self: center;
+            }
+            #game-canvas { max-width: 100%; height: auto; }
+        }
     </style>
 </head>
 <body class="w-screen h-screen flex flex-col items-center justify-center relative">
@@ -687,7 +719,6 @@ function togglePause() {
         gameState = 'PLAYING';
         pauseScreen.classList.add('hidden-overlay');
         lastTime = performance.now(); // reset timer
-        update(); // resume loop
     }
 }
 
